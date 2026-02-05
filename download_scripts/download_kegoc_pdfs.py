@@ -71,7 +71,7 @@ def main():
     # Set up paths
     script_dir = Path(__file__).parent
     links_file = script_dir / 'KEGOC_links.txt'
-    output_dir = script_dir / 'KEGOC_PDFs'
+    output_dir = script_dir.parent / 'KEGOC_PDFs'
 
     # Create output directory
     output_dir.mkdir(exist_ok=True)

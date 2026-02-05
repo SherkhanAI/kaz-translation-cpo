@@ -77,8 +77,8 @@ def download_pdf(url, output_path):
 def main():
     # Set up paths
     script_dir = Path(__file__).parent
-    links_file = script_dir / 'Baiterek.txt'
-    output_dir = script_dir / 'Baiterek_PDFs'
+    links_file = script_dir / 'Baiterek_links.txt'
+    output_dir = script_dir.parent / 'Baiterek_PDFs'
 
     # Create output directory
     output_dir.mkdir(exist_ok=True)

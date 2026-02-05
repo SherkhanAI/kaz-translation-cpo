@@ -96,8 +96,8 @@ def download_pdf(url, output_path):
 def main():
     # Set up paths
     script_dir = Path(__file__).parent
-    links_file = script_dir / 'Halyk_links'
-    output_dir = script_dir / 'Halyk_PDFs'
+    links_file = script_dir / 'Halyk_links.txt'
+    output_dir = script_dir.parent / 'Halyk_PDFs'
 
     # Create output directory
     output_dir.mkdir(exist_ok=True)

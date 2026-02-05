@@ -71,7 +71,7 @@ def main():
     # Set up paths
     script_dir = Path(__file__).parent
     links_file = script_dir / 'National_Bank_links.txt'
-    output_dir = script_dir / 'National_Bank_PDFs'
+    output_dir = script_dir.parent / 'National_Bank_PDFs'
 
     # Create output directory
     output_dir.mkdir(exist_ok=True)
