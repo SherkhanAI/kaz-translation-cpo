@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Phase 1: PDF Extraction using Docling
-=====================================
+Phase 1: PDF Extraction (Hybrid Approach)
+==========================================
 
-Extracts text from PDF files while preserving structure.
-Outputs clean markdown files for each PDF.
+Fast text extraction using pypdf for digital PDFs.
+Falls back to Docling OCR only for scanned pages.
 
 Usage:
     python scripts/01_extract_pdfs.py --input_dirs Halyk_PDFs KEGOC_PDFs --output_dir extracted_markdown
@@ -20,9 +20,17 @@ from pathlib import Path
 from datetime import datetime
 from tqdm import tqdm
 
-from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+# Fast PDF text extraction
+from pypdf import PdfReader
+
+# Docling only for OCR fallback
+try:
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
+    print("[INFO] Docling not available, OCR fallback disabled")
 
 
 # Kazakh-specific characters for validation
@@ -160,24 +168,41 @@ def extract_text_only(markdown_text: str) -> str:
     return '\n'.join(text_lines)
 
 
-def setup_converter() -> DocumentConverter:
+def extract_with_pypdf(pdf_path: Path) -> tuple[str, int]:
     """
-    Setup Docling DocumentConverter with optimal settings for financial PDFs.
+    Fast text extraction using pypdf.
+    Returns (text, num_pages_with_text).
     """
-    pdf_options = PdfPipelineOptions()
-    pdf_options.do_ocr = True  # Enable OCR for scanned documents
-    pdf_options.do_table_structure = True  # Preserve table structure
+    reader = PdfReader(str(pdf_path))
+    all_text = []
+    pages_with_text = 0
 
-    converter = DocumentConverter(
-        allowed_formats=[InputFormat.PDF],
-    )
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if text.strip():
+            pages_with_text += 1
+        all_text.append(text)
 
-    return converter
+    return "\n\n".join(all_text), pages_with_text
 
 
-def process_pdf(pdf_path: Path, converter: DocumentConverter) -> dict:
+def extract_with_docling(pdf_path: Path) -> str:
     """
-    Process a single PDF and return extraction results.
+    OCR extraction using Docling (for scanned PDFs).
+    """
+    if not DOCLING_AVAILABLE:
+        return ""
+
+    converter = DocumentConverter(allowed_formats=[InputFormat.PDF])
+    result = converter.convert(str(pdf_path))
+    return result.document.export_to_markdown()
+
+
+def process_pdf(pdf_path: Path, use_ocr_fallback: bool = True) -> dict:
+    """
+    Process a single PDF using hybrid approach:
+    1. Try fast pypdf extraction first
+    2. Fall back to Docling OCR only if pypdf extracts too little text
     """
     result = {
         "filename": pdf_path.name,
@@ -185,20 +210,46 @@ def process_pdf(pdf_path: Path, converter: DocumentConverter) -> dict:
         "markdown": "",
         "text_only": "",
         "char_count": 0,
+        "method": "pypdf",
         "error": None
     }
 
     try:
-        # Convert PDF to document
-        conversion_result = converter.convert(str(pdf_path))
+        # Get PDF page count for threshold calculation
+        reader = PdfReader(str(pdf_path))
+        total_pages = len(reader.pages)
 
-        # Export to markdown
-        markdown_text = conversion_result.document.export_to_markdown()
+        # Step 1: Try fast pypdf extraction
+        raw_text, pages_with_text = extract_with_pypdf(pdf_path)
 
-        # Clean markdown
+        # Check if we got meaningful text (at least 50% of pages have text)
+        text_coverage = pages_with_text / total_pages if total_pages > 0 else 0
+        min_chars_per_page = 100  # Minimum expected chars per page
+
+        has_enough_text = (
+            text_coverage >= 0.5 and
+            len(raw_text) >= total_pages * min_chars_per_page
+        )
+
+        if has_enough_text:
+            # pypdf worked well - use its output
+            markdown_text = raw_text
+            result["method"] = "pypdf"
+            print(f"  [pypdf] {pages_with_text}/{total_pages} pages with text")
+        else:
+            # Need OCR fallback
+            if use_ocr_fallback and DOCLING_AVAILABLE:
+                print(f"  [OCR] Low text coverage ({text_coverage:.0%}), using Docling...")
+                markdown_text = extract_with_docling(pdf_path)
+                result["method"] = "docling_ocr"
+            else:
+                # Use what we got from pypdf
+                markdown_text = raw_text
+                result["method"] = "pypdf_partial"
+                print(f"  [WARNING] Low text coverage, OCR disabled")
+
+        # Clean and post-process
         markdown_text = clean_markdown(markdown_text)
-
-        # Extract text only (no tables)
         text_only = extract_text_only(markdown_text)
 
         # Validate Kazakh encoding
@@ -235,6 +286,11 @@ def main():
         action="store_true",
         help="Extract text only (skip tables)"
     )
+    parser.add_argument(
+        "--no_ocr",
+        action="store_true",
+        help="Disable OCR fallback (faster, but may miss scanned pages)"
+    )
     args = parser.parse_args()
 
     # Setup paths
@@ -242,9 +298,13 @@ def main():
     output_dir = base_dir / args.output_dir
     output_dir.mkdir(exist_ok=True)
 
-    # Initialize converter
-    print("Initializing Docling DocumentConverter...")
-    converter = setup_converter()
+    # Info about extraction mode
+    print("=" * 60)
+    print("PDF EXTRACTION (Hybrid Mode)")
+    print("=" * 60)
+    print("  Primary:  pypdf (fast, for digital PDFs)")
+    print(f"  Fallback: Docling OCR {'(disabled)' if args.no_ocr else '(enabled)'}")
+    print("=" * 60)
 
     # Collect all PDFs
     all_pdfs = []
@@ -273,11 +333,12 @@ def main():
     for pdf_path in tqdm(all_pdfs, desc="Extracting PDFs"):
         print(f"\nProcessing: {pdf_path.name}")
 
-        result = process_pdf(pdf_path, converter)
+        result = process_pdf(pdf_path, use_ocr_fallback=not args.no_ocr)
         extraction_log.append({
             "filename": result["filename"],
             "success": result["success"],
             "char_count": result["char_count"],
+            "method": result.get("method", "unknown"),
             "error": result["error"]
         })
 
