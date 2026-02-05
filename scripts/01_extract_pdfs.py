@@ -29,6 +29,64 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 KAZ_SPECIFIC_CHARS = set("ӘәҒғҚқҢңӨөҰұҮүІі")
 
 
+def fix_unicode_escapes(text: str) -> str:
+    """
+    Fix malformed Unicode escape sequences from PDF extraction.
+
+    Docling sometimes outputs sequences like /uni04AF instead of actual characters.
+    This function converts them to proper Unicode characters.
+
+    Pattern examples:
+    - /uni04AF → ү (Kazakh letter)
+    - /uni043F → п (Cyrillic letter)
+    - /uni044F → я (Cyrillic letter)
+    """
+    def replace_uni(match):
+        hex_code = match.group(1)
+        try:
+            return chr(int(hex_code, 16))
+        except (ValueError, OverflowError):
+            return match.group(0)  # Return original if invalid
+
+    # Pattern for /uniXXXX (4 hex digits)
+    text = re.sub(r'/uni([0-9A-Fa-f]{4})', replace_uni, text)
+
+    # Pattern for /uniXXXXXX (6 hex digits for extended Unicode)
+    text = re.sub(r'/uni([0-9A-Fa-f]{6})', replace_uni, text)
+
+    # Also handle backslash variants: \uni04AF
+    text = re.sub(r'\\uni([0-9A-Fa-f]{4})', replace_uni, text)
+    text = re.sub(r'\\uni([0-9A-Fa-f]{6})', replace_uni, text)
+
+    # Handle PDF glyph names: /afii10097 etc. (Cyrillic glyphs)
+    # Common Cyrillic glyph mappings
+    cyrillic_glyphs = {
+        '/afii10017': 'А', '/afii10018': 'Б', '/afii10019': 'В', '/afii10020': 'Г',
+        '/afii10021': 'Д', '/afii10022': 'Е', '/afii10023': 'Ё', '/afii10024': 'Ж',
+        '/afii10025': 'З', '/afii10026': 'И', '/afii10027': 'Й', '/afii10028': 'К',
+        '/afii10029': 'Л', '/afii10030': 'М', '/afii10031': 'Н', '/afii10032': 'О',
+        '/afii10033': 'П', '/afii10034': 'Р', '/afii10035': 'С', '/afii10036': 'Т',
+        '/afii10037': 'У', '/afii10038': 'Ф', '/afii10039': 'Х', '/afii10040': 'Ц',
+        '/afii10041': 'Ч', '/afii10042': 'Ш', '/afii10043': 'Щ', '/afii10044': 'Ъ',
+        '/afii10045': 'Ы', '/afii10046': 'Ь', '/afii10047': 'Э', '/afii10048': 'Ю',
+        '/afii10049': 'Я',
+        '/afii10065': 'а', '/afii10066': 'б', '/afii10067': 'в', '/afii10068': 'г',
+        '/afii10069': 'д', '/afii10070': 'е', '/afii10071': 'ё', '/afii10072': 'ж',
+        '/afii10073': 'з', '/afii10074': 'и', '/afii10075': 'й', '/afii10076': 'к',
+        '/afii10077': 'л', '/afii10078': 'м', '/afii10079': 'н', '/afii10080': 'о',
+        '/afii10081': 'п', '/afii10082': 'р', '/afii10083': 'с', '/afii10084': 'т',
+        '/afii10085': 'у', '/afii10086': 'ф', '/afii10087': 'х', '/afii10088': 'ц',
+        '/afii10089': 'ч', '/afii10090': 'ш', '/afii10091': 'щ', '/afii10092': 'ъ',
+        '/afii10093': 'ы', '/afii10094': 'ь', '/afii10095': 'э', '/afii10096': 'ю',
+        '/afii10097': 'я',
+    }
+
+    for glyph, char in cyrillic_glyphs.items():
+        text = text.replace(glyph, char)
+
+    return text
+
+
 def validate_kazakh_encoding(text: str, filename: str) -> bool:
     """
     Validate that Kazakh text contains proper Kazakh-specific characters.
@@ -46,10 +104,14 @@ def validate_kazakh_encoding(text: str, filename: str) -> bool:
 def clean_markdown(text: str) -> str:
     """
     Post-process extracted markdown:
+    - Fix Unicode escape sequences
     - Remove excessive whitespace
     - Clean up headers/footers patterns
     - Remove page numbers
     """
+    # Fix Unicode escape sequences FIRST
+    text = fix_unicode_escapes(text)
+
     # Remove page numbers (common patterns)
     text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
     text = re.sub(r'\n\s*Page\s+\d+\s*(of\s+\d+)?\s*\n', '\n', text, flags=re.IGNORECASE)
