@@ -21,7 +21,11 @@ docling-core>=2.0.0
 # =============================================================================
 # Phase 3: Embedding & Alignment
 # =============================================================================
-sentence-transformers>=3.3.0
+sonar-space>=0.3.0      # Meta's SONAR - multilingual embeddings (200+ languages)
+sentence-transformers>=3.3.0  # MEXMA + LaBSE via SentenceTransformer API
+bertalign @ git+https://github.com/bfsujason/bertalign.git  # m:n sentence alignment with DP
+numba>=0.60.0           # Required by bertalign for JIT-compiled DP
+sentence-splitter>=1.4  # Required by bertalign
 # faiss-gpu - install via conda: conda install -c pytorch -c nvidia faiss-gpu=1.9.0
 # OR for CPU: pip install faiss-cpu
 transformers>=4.45.0
