@@ -53,13 +53,15 @@ except ImportError:
 
 # Bertalign
 BERTALIGN_AVAILABLE = False
+_bertalign_module = None
 try:
-    import bertalign
+    import bertalign as _bertalign_module
+    import bertalign.aligner as _bertalign_aligner_module
     from bertalign.encoder import Encoder as BertalignEncoder
     from bertalign import Bertalign
     BERTALIGN_AVAILABLE = True
 except ImportError:
-    pass
+    _bertalign_aligner_module = None
 
 # FAISS (for SONAR fallback path)
 FAISS_AVAILABLE = False
@@ -217,9 +219,8 @@ def inject_bertalign_model(model_key: str, device: str = "cuda"):
     encoder.model = SentenceTransformer(hf_name, device=device)
 
     # Patch the module-level globals that Bertalign's aligner reads
-    bertalign.model = encoder
-    import bertalign.aligner
-    bertalign.aligner.model = encoder
+    _bertalign_module.model = encoder
+    _bertalign_aligner_module.model = encoder
 
     return encoder
 
