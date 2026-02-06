@@ -261,7 +261,9 @@ def compute_post_hoc_similarity(
     tgt_text: str,
 ) -> float:
     """Compute cosine similarity between two texts using the encoder."""
-    emb = encoder.encode([src_text, tgt_text])
+    # BertalignEncoder wraps SentenceTransformer in .model attribute
+    st_model = encoder.model if hasattr(encoder, 'model') else encoder
+    emb = st_model.encode([src_text, tgt_text], normalize_embeddings=True)
     sim = float(np.dot(emb[0], emb[1]))
     return sim
 
